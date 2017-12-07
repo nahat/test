@@ -42,7 +42,7 @@
 		class="org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder" />
 
 	<authentication-manager>
-		<authentication-provider user-service-ref="customUserDetailsService">
+		<authentication-provider user-service-ref="CustomUserDetailsService">
 			<password-encoder ref="bcryptEncoder" />
 		</authentication-provider>
 	</authentication-manager>
