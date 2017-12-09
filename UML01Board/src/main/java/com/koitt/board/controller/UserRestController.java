@@ -1,14 +1,27 @@
 package com.koitt.board.controller;
 
+import java.io.File;
+import java.net.URLEncoder;
+
+import javax.servlet.http.HttpServletRequest;
+
 import org.apache.commons.codec.binary.Base64;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.util.UriComponentsBuilder;
 
+import com.koitt.board.model.CommonException;
 import com.koitt.board.model.UserInfo;
 import com.koitt.board.service.UserInfoService;
 
@@ -16,13 +29,15 @@ import com.koitt.board.service.UserInfoService;
 @RequestMapping("/rest")
 public class UserRestController {
 	
+	private static final String UPLOAD_FOLDER = "/avatar";
+	
 	@Autowired
 	private UserInfoService userInfoService;
 	
 	@Autowired
 	private PasswordEncoder passwordEncoder;
 	
-	@RequestMapping(value = "/user/login", method = RequestMethod.POST)
+	@RequestMapping(value = "/rest/user/login", method = RequestMethod.POST)
 	public ResponseEntity<String> login(UserInfo userInfo) {
 		// 아이디 존재 유무와 비밀번호 일치 여부 확인
 		boolean isMatched = userInfoService.isPasswordMatched(
@@ -44,5 +59,68 @@ public class UserRestController {
 		}
 		
 		return new ResponseEntity<String>("", HttpStatus.NOT_FOUND);
+	}
+	
+	@RequestMapping(value = "/rest/user", method = RequestMethod.POST)
+	public ResponseEntity<Void> newUser(HttpServletRequest request,
+			String email,
+			String password,
+			String name,
+			@RequestParam("avatar") MultipartFile avatar,
+			UriComponentsBuilder ucBuilder)
+					throws CommonException, Exception {
+
+		UserInfo user = new UserInfo();
+		user.setEmail(email);
+		user.setPassword(password);
+		user.setName(name);
+
+		// 최상위 경로 밑에 upload 폴더의 경로를 가져온다.
+		String path = request.getServletContext().getRealPath(UPLOAD_FOLDER);
+
+		// MultipartFile 객체에서 파일명을 가져온다.
+		String originalName = avatar.getOriginalFilename();
+
+		// upload 폴더가 없다면, upload 폴더 생성
+		File directory = new File(path);
+		if (!directory.exists()) {
+			directory.mkdir();
+		}
+
+		// avatar 객체를 이용하여, 파일을 서버에 전송
+		if (avatar != null && !avatar.isEmpty()) {
+			int idx = originalName.lastIndexOf(".");
+			String fileName = originalName.substring(0, idx);
+			String ext = originalName.substring(idx, originalName.length());
+			String uploadFilename = fileName
+					+ Long.toHexString(System.currentTimeMillis())
+					+ ext;
+			avatar.transferTo(new File(path, uploadFilename));
+			uploadFilename = URLEncoder.encode(uploadFilename, "UTF-8");
+			user.setAvatar(uploadFilename);
+		}
+
+		userInfoService.newUser(user);
+
+		HttpHeaders headers = new HttpHeaders();
+		headers.setLocation(ucBuilder.path("/rest/user/{email}").buildAndExpand(user.getEmail()).toUri());
+		
+		return new ResponseEntity<Void>(headers, HttpStatus.CREATED);
+	}
+	
+	@RequestMapping(value = "/", method = RequestMethod.GET, produces = {MediaType.APPLICATION_JSON_UTF8_VALUE, MediaType.APPLICATION_ATOM_XML_VALUE})
+	public ResponseEntity<UserInfo> homePage(@PathVariable("email") String email) {
+
+		UserInfo item = null;
+		// 로그인 된 상태이면
+		if (email != null && !email.trim().isEmpty()) {
+			 item = userInfoService.detail(email);
+			 
+			 if (item != null) {
+				 return new ResponseEntity<UserInfo>(item, HttpStatus.OK);
+			}
+		}
+
+		return new ResponseEntity<UserInfo>(new UserInfo(), HttpStatus.NO_CONTENT);
 	}
 }
